@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>GEP - Gabster Engine Parametric</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1e1e1e; color: #fff; padding: 20px; }
+        .container { max-width: 900px; margin: auto; background: #2d2d2d; padding: 20px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        .linha-atributo { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; background: #3d3d3d; padding: 10px; border-radius: 6px; }
+        input, select { padding: 8px; border-radius: 4px; border: 1px solid #555; background: #1e1e1e; color: #fff; }
+        .input-nome { width: 120px; font-weight: bold; color: #4facfe; }
+        .input-label { width: 150px; }
+        .input-valor { flex: 1; font-family: monospace; font-size: 14px; }
+        .input-acesso { width: 130px; }
+        button { padding: 8px 15px; background: #007acc; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        button:hover { background: #005f9e; }
+        .btn-remover { background: #cc0000; padding: 8px 12px; }
+        .btn-remover:hover { background: #9e0000; }
+        pre { background: #000; padding: 15px; border-radius: 4px; color: #00ff00; overflow-x: auto; font-size: 13px; }
+        h2 { border-bottom: 1px solid #444; padding-bottom: 10px; margin-top: 0; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>⚙️ GEP - Motor Paramétrico (Fase 2: Metadados)</h2>
+    
+    <div id="lista-atributos">
+        </div>
+
+    <button onclick="adicionarLinha()">+ Novo Atributo</button>
+    <hr style="border-color: #444; margin: 20px 0;">
+    
+    <button onclick="processarGEP()" style="background: #28a745; width: 100%; font-size: 16px; padding: 12px;">🚀 CALCULAR E GERAR JSON INTELIGENTE</button>
+
+    <h3>Pacote JSON Final (Pronto para o Ruby):</h3>
+    <pre id="resultado-json">// O JSON estruturado aparecerá aqui...</pre>
+</div>
+
+<script>
+    // ==========================================
+    // 1. MOTOR GEP (Atualizado para manter Metadados)
+    // ==========================================
+    class GabsterEngineParametric {
+        constructor() {
+            this.attributes = {}; 
+            this.computed = {};   
+        }
+
+        load(jsonAtributos) {
+            this.attributes = jsonAtributos;
+            this.computed = {};
+        }
+
+        _extractDependencies(formula) {
+            if (typeof formula !== 'string' || !formula.startsWith('=')) return [];
+            const cleanFormula = formula.substring(1);
+            return [...new Set(cleanFormula.match(/[A-Za-z_][A-Za-z0-9_]*/g) || [])]; 
+        }
+
+        _buildExecutionOrder() {
+            const graph = {};
+            const inDegree = {}; 
+            const keys = Object.keys(this.attributes);
+
+            keys.forEach(key => { graph[key] = []; inDegree[key] = 0; });
+
+            keys.forEach(key => {
+                const attr = this.attributes[key];
+                if (typeof attr.value === 'string' && attr.value.startsWith('=')) {
+                    const deps = this._extractDependencies(attr.value);
+                    deps.forEach(dep => {
+                        if (graph[dep] !== undefined) {
+                            graph[dep].push(key); 
+                            inDegree[key]++;
+                        }
+                    });
+                }
+            });
+
+            const queue = [];
+            keys.forEach(key => { if (inDegree[key] === 0) queue.push(key); });
+
+            const order = [];
+            while (queue.length > 0) {
+                const current = queue.shift();
+                order.push(current);
+                graph[current].forEach(neighbor => {
+                    inDegree[neighbor]--;
+                    if (inDegree[neighbor] === 0) queue.push(neighbor);
+                });
+            }
+
+            if (order.length !== keys.length) throw new Error("🚨 Erro: Referência Circular detectada!");
+            return order;
+        }
+
+        calculate() {
+            try {
+                const order = this._buildExecutionOrder();
+                
+                // Objeto temporário apenas com os valores para a matemática funcionar
+                const mathContext = {};
+
+                order.forEach(key => {
+                    const attr = this.attributes[key];
+                    let val = attr.value;
+
+                    if (typeof val === 'string' && val.startsWith('=')) {
+                        let formula = val.substring(1);
+                        const contextNames = Object.keys(mathContext);
+                        const contextValues = Object.values(mathContext);
+                        const mathSolver = new Function(...contextNames, `return ${formula};`);
+                        val = mathSolver(...contextValues);
+                    }
+                    
+                    val = (isNaN(Number(val)) || val === "") ? val : Number(val);
+                    mathContext[key] = val;
+
+                    // Salva no formato estruturado para o SketchUp
+                    this.computed[key] = {
+                        value: val,
+                        label: attr.label,
+                        access: attr.access
+                    };
+                });
+                return this.computed;
+            } catch (error) {
+                return { erro: error.message };
+            }
+        }
+    }
+
+    // ==========================================
+    // 2. CONTROLE DA INTERFACE (UI)
+    // ==========================================
+    function adicionarLinha(nome = "", label = "", valor = "", acesso = "hidden") {
+        const div = document.createElement("div");
+        div.className = "linha-atributo";
+        
+        div.innerHTML = `
+            <input type="text" placeholder="Variável" value="${nome}" class="input-nome" title="Nome interno no motor (ex: LenX)">
+            <input type="text" placeholder="Nome Exibição" value="${label}" class="input-label" title="Nome que o usuário verá (ex: Largura)">
+            <input type="text" placeholder="Valor ou =Fórmula" value="${valor}" class="input-valor">
+            <select class="input-acesso">
+                <option value="hidden" ${acesso === 'hidden' ? 'selected' : ''}>Oculto</option>
+                <option value="user_input" ${acesso === 'user_input' ? 'selected' : ''}>Usuário Edita</option>
+                <option value="read_only" ${acesso === 'read_only' ? 'selected' : ''}>Apenas Leitura</option>
+            </select>
+            <button class="btn-remover" onclick="this.parentElement.remove()">X</button>
+        `;
+        document.getElementById("lista-atributos").appendChild(div);
+    }
+
+    function processarGEP() {
+            const linhas = document.querySelectorAll(".linha-atributo");
+            const atributosUsuario = {};
+
+            linhas.forEach(linha => {
+                const nome = linha.querySelector(".input-nome").value.trim();
+                const label = linha.querySelector(".input-label").value.trim();
+                const valor = linha.querySelector(".input-valor").value.trim();
+                const acesso = linha.querySelector(".input-acesso").value;
+                
+                if (nome !== "") {
+                    atributosUsuario[nome] = { 
+                        value: valor,
+                        label: label || nome, // Se não tiver label, usa o nome da variável
+                        access: acesso
+                    };
+                }
+            });
+
+            const gep = new GabsterEngineParametric();
+            gep.load(atributosUsuario);
+            const resultado = gep.calculate();
+
+            // 1. Converte o resultado para texto JSON (string)
+            const jsonString = JSON.stringify(resultado, null, 2);
+            
+            // Atualiza a tela (útil para debugar fora do SketchUp)
+            document.getElementById("resultado-json").innerText = jsonString;
+
+            // 2. A PONTE COM O RUBY:
+            // Verifica se a variável global 'sketchup' existe (ela só existe quando o HTML roda dentro do SketchUp)
+            if (typeof sketchup !== 'undefined') {
+                sketchup.enviarParaRuby(jsonString);
+            }
+        }
+
+    // Campos de exemplo
+    adicionarLinha("PosX", "Posição X (mm)", "0", "user_input");
+    adicionarLinha("PosY", "Posição Y (mm)", "0", "user_input");
+    adicionarLinha("PosZ", "Posição Z (mm)", "0", "user_input");
+
+    adicionarLinha("X", "Largura (mm)", "800", "user_input");
+    adicionarLinha("Espessura", "Esp. do MDF", "18", "user_input");
+    adicionarLinha("Y", "Profundidade", "=X - 50", "read_only");
+    adicionarLinha("Gap", "", "5", "hidden");
+    adicionarLinha("Z", "Altura (mm)", "500", "user_input");
+
+    adicionarLinha("Material", "Material", "Branco", "user_input");
+
+    function carregarDadosExistentes(json){
+        const dados = JSON.parse(json);
+
+        document.getElementById("lista-atributos").innerHTML = "";
+
+        Object.keys(dados).forEach(key=>{
+            const attr = dados[key];
+            adicionarLinha(
+                key,
+                attr.label || key,
+                attr.value,
+                attr.access || "hidden"
+            );
+        });
+    }
+
+    window.onload = function(){
+    if (typeof sketchup !== 'undefined'){
+        sketchup.pedirDados();
+    }
+}
+</script>
+
+</body>
+</html>
